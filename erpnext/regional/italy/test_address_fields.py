@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
@@ -116,3 +117,31 @@ class TestItalyAddressFields(unittest.TestCase):
 		utils.prepare_payment_schedule([schedule], frappe._dict({"default_bank_account": None}), "ACC-SINV-2026-00001")
 
 		self.assertEqual(schedule.payment_reference, "ACC-SINV-2026-00001")
+
+	def test_get_progressive_name_and_number_replace_removes_all_existing_xmls(self):
+		doc = frappe._dict({"doctype": "Sales Invoice", "name": "ACC-SINV-2026-00001", "company_tax_id": "IT04266880980"})
+		attachments = [
+			SimpleNamespace(name="newer", file_name="IT04266880980_00005392f7f.xml"),
+			SimpleNamespace(name="older", file_name="IT04266880980_00002.xml"),
+		]
+
+		with (
+			patch.object(utils, "get_e_invoice_attachments", return_value=attachments),
+			patch.object(utils, "remove_file") as remove_file,
+		):
+			progressive_name, progressive_number = utils.get_progressive_name_and_number(doc, replace=True)
+
+		self.assertEqual(progressive_name, "IT04266880980_00005")
+		self.assertEqual(progressive_number, "00005")
+		self.assertEqual(remove_file.call_count, 2)
+
+	def test_get_e_invoice_attachments_uses_invoice_names_in_filter(self):
+		invoice = frappe._dict({"name": "ACC-SINV-2026-00001", "company_tax_id": "04266880980"})
+
+		with patch.object(utils.frappe, "get_all", return_value=[] ) as get_all:
+			utils.get_e_invoice_attachments(invoice)
+
+		self.assertEqual(
+			get_all.call_args.kwargs["filters"]["attached_to_name"],
+			("in", ["ACC-SINV-2026-00001"]),
+		)
