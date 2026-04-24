@@ -1,5 +1,6 @@
 import io
 import json
+import re
 
 import frappe
 from frappe import _
@@ -18,6 +19,7 @@ ADDRESS_VALIDATION_LABELS = {
 }
 
 ITALY_COUNTRY_NAMES = {"Italy", "Italia", "Italian Republic", "Repubblica Italiana"}
+PROGRESSIVE_XML_PATTERN = re.compile(r"^(?P<prefix>.+?)_(?P<progressive>\d{5})(?P<suffix>[A-Za-z0-9]*)\.xml$")
 
 
 def update_itemised_tax_data(doc):
@@ -420,8 +422,12 @@ def get_e_invoice_attachments(invoices):
 
 	attachments = frappe.get_all(
 		"File",
-		fields=("name", "file_name", "attached_to_name", "is_private"),
-		filters={"attached_to_name": ("in", tax_id_map), "attached_to_doctype": "Sales Invoice"},
+		fields=("name", "file_name", "attached_to_name", "is_private", "creation"),
+		filters={
+			"attached_to_name": ("in", list(tax_id_map.keys())),
+			"attached_to_doctype": "Sales Invoice",
+		},
+		order_by="creation desc",
 	)
 
 	out = []
@@ -483,17 +489,38 @@ def get_unamended_name(doc):
 
 
 def get_progressive_name_and_number(doc, replace=False):
-	if replace:
-		for attachment in get_e_invoice_attachments(doc):
-			remove_file(attachment.name, attached_to_doctype=doc.doctype, attached_to_name=doc.name)
-			filename = attachment.file_name.split(".xml")[0]
-			return filename, filename.split("_")[1]
-
 	company_tax_id = doc.company_tax_id if doc.company_tax_id.startswith("IT") else "IT" + doc.company_tax_id
+
+	if replace:
+		attachments = get_e_invoice_attachments(doc) or []
+		if attachments:
+			progressive_name, progressive_number = get_attachment_progressive_name_and_number(
+				attachments[0].file_name, company_tax_id
+			)
+		else:
+			progressive_name = frappe.model.naming.make_autoname(company_tax_id + "_.#####")
+			progressive_number = progressive_name.split("_")[1]
+
+		for attachment in attachments:
+			remove_file(attachment.name, attached_to_doctype=doc.doctype, attached_to_name=doc.name)
+		if attachments:
+			return progressive_name, progressive_number
+
 	progressive_name = frappe.model.naming.make_autoname(company_tax_id + "_.#####")
 	progressive_number = progressive_name.split("_")[1]
 
 	return progressive_name, progressive_number
+
+
+def get_attachment_progressive_name_and_number(file_name, company_tax_id):
+	match = PROGRESSIVE_XML_PATTERN.match(file_name or "")
+	if match and match.group("prefix") == company_tax_id:
+		progressive_number = match.group("progressive")
+		return f"{company_tax_id}_{progressive_number}", progressive_number
+
+	filename = (file_name or "").split(".xml")[0]
+	progressive_number = filename.split("_")[1]
+	return filename, progressive_number
 
 
 def set_state_code(doc, method):
