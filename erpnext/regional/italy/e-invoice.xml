@@ -107,8 +107,8 @@
             <IdPaese>{{ doc.customer_address_data.country_code }}</IdPaese>
             <IdCodice>{{ doc.tax_id | replace("IT","") }}</IdCodice>
           </IdFiscaleIVA>
-          {%- if doc.customer_data.fiscal_code %}
-          <CodiceFiscale>{{ doc.customer_data.fiscal_code }}</CodiceFiscale>
+          {%- if doc.customer_fiscal_code %}
+          <CodiceFiscale>{{ doc.customer_fiscal_code }}</CodiceFiscale>
           {%- endif %}
           <Anagrafica>
             <Denominazione>{{ doc.customer_name }}</Denominazione>
@@ -209,7 +209,7 @@
         {%- endif %}
         <ImponibileImporto>{{ format_float(data.taxable_amount, item_meta.get_field("tax_amount").precision) }}</ImponibileImporto>
         <Imposta>{{ format_float(data.tax_amount, item_meta.get_field("tax_amount").precision) }}</Imposta>
-        {%- if data.vat_collectability %}
+        {%- if doc.vat_collectability %}
           <EsigibilitaIVA>{{ doc.vat_collectability.split("-")[0] }}</EsigibilitaIVA>
         {%- endif %}
         {%- if data.tax_exemption_law %}
@@ -241,6 +241,7 @@
         {%- if payment_term.bank_account_swift_number %}
           <BIC>{{ payment_term.bank_account_swift_number }}</BIC>
         {%- endif %}
+        <CodicePagamento>{{ payment_term.payment_reference or doc.unamended_name }}</CodicePagamento>
       </DettaglioPagamento>
       {%- endfor %}
     </DatiPagamento>

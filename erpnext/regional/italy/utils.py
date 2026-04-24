@@ -14,7 +14,10 @@ ADDRESS_VALIDATION_LABELS = {
 	"pincode": _("Postal Code"),
 	"city": _("City/Town"),
 	"country_code": _("Country Code"),
+	"state_code": _("State/Province Code"),
 }
+
+ITALY_COUNTRY_NAMES = {"Italy", "Italia", "Italian Republic", "Repubblica Italiana"}
 
 
 def update_itemised_tax_data(doc):
@@ -59,7 +62,7 @@ def prepare_invoice(invoice, progressive_number):
 	invoice.unamended_name = get_unamended_name(invoice)
 	invoice.company_data = company
 	company_address = frappe.get_doc("Address", invoice.company_address)
-	invoice.company_address_data = company_address
+	invoice.company_address_data = prepare_e_invoice_address(company_address)
 
 	# Set invoice type
 	if not invoice.type_of_document:
@@ -74,10 +77,17 @@ def prepare_invoice(invoice, progressive_number):
 	# set customer information
 	invoice.customer_data = frappe.get_doc("Customer", invoice.customer)
 	customer_address = frappe.get_doc("Address", invoice.customer_address)
-	invoice.customer_address_data = customer_address
+	invoice.customer_address_data = prepare_e_invoice_address(customer_address)
+	invoice.customer_fiscal_code = get_customer_fiscal_code(
+		invoice.customer_data,
+		invoice.customer_fiscal_code or invoice.tax_id or invoice.customer_data.tax_id,
+		get_address_country_code(invoice.customer_address_data),
+	)
 
 	if invoice.shipping_address_name:
-		invoice.shipping_address_data = frappe.get_doc("Address", invoice.shipping_address_name)
+		invoice.shipping_address_data = prepare_e_invoice_address(
+			frappe.get_doc("Address", invoice.shipping_address_name)
+		)
 
 	if invoice.customer_data.is_public_administration:
 		invoice.transmission_format_code = "FPA12"
@@ -105,6 +115,7 @@ def prepare_invoice(invoice, progressive_number):
 			customer_po_data[d.customer_po_no] = d.customer_po_date
 
 	invoice.customer_po_data = customer_po_data
+	prepare_payment_schedule(invoice.payment_schedule, company, invoice.unamended_name)
 
 	return invoice
 
@@ -426,7 +437,7 @@ def get_e_invoice_attachments(invoices):
 
 
 def validate_address(address_name):
-	fields = ["pincode", "city", "country", "country_code"]
+	fields = ["pincode", "city", "country", "country_code", "state", "state_code"]
 	data = frappe.get_cached_value("Address", address_name, fields, as_dict=1) or {}
 
 	for field in ("pincode", "city"):
@@ -439,10 +450,20 @@ def validate_address(address_name):
 				title=_("E-Invoicing Information Missing"),
 			)
 
-	if not get_address_country_code(data):
+	country_code = get_address_country_code(data)
+	if not country_code:
 		frappe.throw(
 			_("Please set {0} for address {1}").format(
 				ADDRESS_VALIDATION_LABELS["country_code"],
+				address_name,
+			),
+			title=_("E-Invoicing Information Missing"),
+		)
+
+	if country_code == "IT" and not get_address_state_code(data):
+		frappe.throw(
+			_("Please set {0} for address {1}").format(
+				ADDRESS_VALIDATION_LABELS["state_code"],
 				address_name,
 			),
 			title=_("E-Invoicing Information Missing"),
@@ -486,17 +507,12 @@ def set_state_code(doc, method):
 	if not doc.get("state"):
 		return
 
-	if not (
-		hasattr(doc, "state_code")
-		and doc.country in ["Italy", "Italia", "Italian Republic", "Repubblica Italiana"]
-	):
+	if not (hasattr(doc, "state_code") and doc.country in ITALY_COUNTRY_NAMES):
 		return
 
-	state_codes_lower = {key.lower(): value for key, value in state_codes.items()}
-
-	state = doc.get("state", "").lower()
-	if state_codes_lower.get(state):
-		doc.state_code = state_codes_lower.get(state)
+	state_code = get_address_state_code(doc)
+	if state_code:
+		doc.state_code = state_code
 
 
 def get_address_country_code(address):
@@ -510,3 +526,75 @@ def get_address_country_code(address):
 
 	country_code = frappe.get_cached_value("Country", country, "code")
 	return country_code.upper() if country_code else None
+
+
+def get_address_state_code(address):
+	state_code = cstr(address.get("state_code")).strip().upper()
+	if state_code:
+		return state_code
+
+	state = cstr(address.get("state")).strip()
+	if not state:
+		return None
+
+	upper_state = state.upper()
+	if len(upper_state) == 2 and upper_state.isalpha():
+		return upper_state
+
+	state_codes_lower = {key.lower(): value for key, value in state_codes.items()}
+	return state_codes_lower.get(state.lower())
+
+
+def prepare_e_invoice_address(address):
+	data = frappe._dict(address.as_dict() if hasattr(address, "as_dict") else address)
+	country_code = get_address_country_code(data)
+	if country_code:
+		data.country_code = country_code
+
+	state_code = get_address_state_code(data)
+	if state_code:
+		data.state_code = state_code
+
+	return data
+
+
+def get_customer_fiscal_code(customer, tax_id=None, country_code=None):
+	fiscal_code = cstr(customer.get("fiscal_code")).strip()
+	if fiscal_code:
+		return fiscal_code
+
+	if customer.get("customer_type") != "Company" or country_code != "IT":
+		return None
+
+	normalized_tax_id = cstr(tax_id).strip().upper()
+	if normalized_tax_id.startswith("IT"):
+		normalized_tax_id = normalized_tax_id[2:]
+
+	return normalized_tax_id or None
+
+
+def prepare_payment_schedule(payment_schedule, company, payment_reference):
+	default_bank_account = company.get("default_bank_account")
+	for schedule in payment_schedule or []:
+		if not schedule.get("bank_account") and default_bank_account:
+			schedule.bank_account = default_bank_account
+
+		if schedule.get("bank_account") and (
+			not schedule.get("bank_account_name")
+			or not schedule.get("bank_account_iban")
+			or not schedule.get("bank_account_swift_number")
+		):
+			bank_account_data = frappe.get_cached_value(
+				"Bank Account",
+				schedule.bank_account,
+				["bank", "iban", "swift_number"],
+				as_dict=1,
+			)
+			if bank_account_data:
+				schedule.bank_account_name = schedule.get("bank_account_name") or bank_account_data.get("bank")
+				schedule.bank_account_iban = schedule.get("bank_account_iban") or bank_account_data.get("iban")
+				schedule.bank_account_swift_number = schedule.get(
+					"bank_account_swift_number"
+				) or bank_account_data.get("swift_number")
+
+		schedule.payment_reference = schedule.get("payment_reference") or payment_reference
