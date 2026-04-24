@@ -10,6 +10,12 @@ from erpnext.controllers.taxes_and_totals import get_itemised_tax
 from erpnext.regional.italy import state_codes
 from erpnext.stock.utils import get_default_stock_uom
 
+ADDRESS_VALIDATION_LABELS = {
+	"pincode": _("Postal Code"),
+	"city": _("City/Town"),
+	"country_code": _("Country Code"),
+}
+
 
 def update_itemised_tax_data(doc):
 	if not doc.taxes:
@@ -420,15 +426,27 @@ def get_e_invoice_attachments(invoices):
 
 
 def validate_address(address_name):
-	fields = ["pincode", "city", "country_code"]
+	fields = ["pincode", "city", "country", "country_code"]
 	data = frappe.get_cached_value("Address", address_name, fields, as_dict=1) or {}
 
-	for field in fields:
+	for field in ("pincode", "city"):
 		if not data.get(field):
 			frappe.throw(
-				_("Please set {0} for address {1}").format(field.replace("-", ""), address_name),
+				_("Please set {0} for address {1}").format(
+					ADDRESS_VALIDATION_LABELS.get(field, field.replace("-", " ")),
+					address_name,
+				),
 				title=_("E-Invoicing Information Missing"),
 			)
+
+	if not get_address_country_code(data):
+		frappe.throw(
+			_("Please set {0} for address {1}").format(
+				ADDRESS_VALIDATION_LABELS["country_code"],
+				address_name,
+			),
+			title=_("E-Invoicing Information Missing"),
+		)
 
 
 def get_unamended_name(doc):
@@ -458,8 +476,12 @@ def get_progressive_name_and_number(doc, replace=False):
 
 
 def set_state_code(doc, method):
-	if doc.get("country_code"):
-		doc.country_code = doc.country_code.upper()
+	country_code = doc.get("country_code")
+	if not country_code and doc.get("country"):
+		country_code = frappe.get_cached_value("Country", doc.country, "code")
+
+	if country_code and hasattr(doc, "country_code"):
+		doc.country_code = country_code.upper()
 
 	if not doc.get("state"):
 		return
@@ -475,3 +497,16 @@ def set_state_code(doc, method):
 	state = doc.get("state", "").lower()
 	if state_codes_lower.get(state):
 		doc.state_code = state_codes_lower.get(state)
+
+
+def get_address_country_code(address):
+	country_code = address.get("country_code")
+	if country_code:
+		return country_code.upper()
+
+	country = address.get("country")
+	if not country:
+		return None
+
+	country_code = frappe.get_cached_value("Country", country, "code")
+	return country_code.upper() if country_code else None
