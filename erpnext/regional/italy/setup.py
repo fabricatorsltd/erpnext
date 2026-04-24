@@ -393,18 +393,20 @@ def get_custom_fields():
 		"Address": [
 			dict(
 				fieldname="country_code",
-				label="Country Code",
+				label="Country Code (ISO)",
 				fieldtype="Data",
 				insert_after="country",
+				description="Derived from Country and used for Italian e-invoicing.",
 				print_hide=1,
-				read_only=0,
+				read_only=1,
 				fetch_from="country.code",
 			),
 			dict(
 				fieldname="state_code",
-				label="State Code",
+				label="State/Province Code",
 				fieldtype="Data",
 				insert_after="state",
+				description="Used for Italian e-invoicing. For Italy this is the 2-letter province code, for example BS or MI.",
 				print_hide=1,
 			),
 		],
