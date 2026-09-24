@@ -411,7 +411,7 @@
   },
   {
    "default": "0",
-   "description": "Blocks all further accounting entries on this customer's account. Only users with the frozen-entries role can override.\n",
+   "description": "Blocks new transactions and further accounting entries on this customer's account. Only users with the role set in Company's \"Roles Allowed to Set and Edit Frozen Account Entries\" can transact.",
    "fieldname": "is_frozen",
    "fieldtype": "Check",
    "label": "Is Frozen",
@@ -475,10 +475,10 @@
    "report_hide": 1
   },
   {
-   "description": "Transactions are blocked or warned when outstanding balance exceeds this amount.",
+   "description": "Transactions are blocked when the outstanding balance exceeds the credit limit. When Restrict Customer Over Billing is enabled, new invoices are also blocked when the customer's overdue amount exceeds the Overdue Limit.",
    "fieldname": "credit_limits",
    "fieldtype": "Table",
-   "label": "Credit Limit",
+   "label": "Credit & Overdue Limits",
    "options": "Customer Credit Limit",
    "show_description_on_click": 1
   },
@@ -696,7 +696,7 @@
    "link_fieldname": "party"
   }
  ],
- "modified": "2026-06-27 16:12:10.457900",
+ "modified": "2026-08-14 16:10:58.600553",
  "modified_by": "Administrator",
  "module": "Selling",
  "name": "Customer",

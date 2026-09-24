@@ -195,9 +195,10 @@ class Workstation(Document):
 
 		for bom_no in bom_list:
 			frappe.db.sql(
-				"""update `tabBOM Operation` set hour_rate = %s
+				"""update `tabBOM Operation`
+				set hour_rate = %s, operating_cost = %s * time_in_mins / 60
 				where parent = %s and workstation = %s""",
-				(self.hour_rate, bom_no[0], self.name),
+				(self.hour_rate, self.hour_rate, bom_no[0], self.name),
 			)
 
 	def validate_workstation_holiday(self, schedule_date, skip_holiday_list_check=False):
@@ -231,7 +232,6 @@ class Workstation(Document):
 		for row in doc.time_logs:
 			if not row.to_time:
 				row.to_time = to_time
-				row.time_in_mins = time_diff_in_hours(row.to_time, row.from_time) / 60
 				row.completed_qty = qty
 
 		doc.save()
@@ -346,8 +346,8 @@ def get_raw_materials(job_card: str):
 		filters={"name": job_card},
 	)
 
-	if not raw_materials:
-		return []
+	if not raw_materials or not raw_materials[0].item_code:
+		frappe.throw(_("This Job Card has no raw materials to transfer."))
 
 	for row in raw_materials:
 		warehouse = row.source_warehouse
@@ -507,12 +507,12 @@ def get_workstations(**kwargs):
 
 	for d in data:
 		d.workstation_name = get_link_to_form("Workstation", d.name)
-		d.status_image = d.on_status_image
+		d.status_image = frappe.utils.escape_html(d.on_status_image)
 		d.workstation_off = ""
 		d.color = color_map.get(d.status, "red")
 		d.workstation_link = get_url_to_form("Workstation", d.name)
 		if d.status != "Production":
-			d.status_image = d.off_status_image
+			d.status_image = frappe.utils.escape_html(d.off_status_image)
 			d.workstation_off = "workstation-off"
 
 	return data

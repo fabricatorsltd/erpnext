@@ -75,6 +75,7 @@ class DeprecatedSerialNoValuation:
 						| (table.serial_no.like("%\n" + serial_no))
 						| (table.serial_no.like("%\n" + serial_no + "\n%"))
 					)
+					& (table.item_code == self.sle.item_code)
 					& (table.company == self.sle.company)
 					& (table.warehouse == self.sle.warehouse)
 					& (table.serial_and_batch_bundle.isnull())
@@ -157,6 +158,9 @@ class DeprecatedBatchNoValuation:
 
 		if self.sle.name:
 			query = query.where(sle.name != self.sle.name)
+
+		if getattr(self, "stock_closing_from_datetime", None):
+			query = query.where(sle.posting_datetime >= self.stock_closing_from_datetime)
 
 		return query.run(as_dict=True)
 

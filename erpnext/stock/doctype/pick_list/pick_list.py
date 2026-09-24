@@ -1381,6 +1381,9 @@ def create_delivery_wo_so(pick_list, target, target_doc=None):
 
 	target_doc.company = pick_list.company
 
+	if not target_doc.customer:
+		target_doc.customer = pick_list.customer
+
 	item_table_mapper_without_so = {
 		"doctype": f"{target} Item",
 		"field_map": {
@@ -1579,6 +1582,7 @@ def add_product_bundles_to_target(pick_list, target_doc, item_mapper, sales_orde
 @frappe.whitelist()
 def create_stock_entry(pick_list: str | dict):
 	pick_list = frappe.get_doc(frappe.parse_json(pick_list))
+	pick_list.check_permission("read")
 	validate_item_locations(pick_list)
 
 	stock_entry = frappe.new_doc("Stock Entry")
